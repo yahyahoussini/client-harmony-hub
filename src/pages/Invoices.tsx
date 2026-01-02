@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -20,30 +21,26 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Plus,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Search,
   Filter,
   FileText,
-  Download,
-  Send,
   DollarSign,
   AlertCircle,
   CheckCircle,
   Clock,
+  MoreHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useInvoices } from "@/hooks/useInvoices";
+import { format } from "date-fns";
 
-interface Invoice {
-  id: string;
-  invoiceNumber: string;
-  clientName: string;
-  amount: string;
-  status: "paid" | "pending" | "overdue" | "draft";
-  dueDate: string;
-  issuedDate: string;
-}
-
-const getStatusConfig = (status: Invoice["status"]) => {
+const getStatusConfig = (status: string) => {
   switch (status) {
     case "paid":
       return {
@@ -72,35 +69,73 @@ export default function Invoices() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  // Empty state - ready for backend binding
-  const invoices: Invoice[] = [];
+  const { invoices, isLoading, stats, updateStatus } = useInvoices();
 
-  const stats = [
+  const filteredInvoices = useMemo(() => {
+    return invoices.filter((invoice) => {
+      const matchesSearch =
+        invoice.client_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        invoice.id.toLowerCase().includes(searchQuery.toLowerCase());
+
+      const matchesStatus =
+        statusFilter === "all" || invoice.status === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [invoices, searchQuery, statusFilter]);
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(amount);
+  };
+
+  const statCards = [
     {
       title: "Total Outstanding",
-      value: "$0",
+      value: formatCurrency(stats.outstanding),
       icon: DollarSign,
       color: "text-primary",
     },
     {
       title: "Paid This Month",
-      value: "$0",
+      value: formatCurrency(stats.paid),
       icon: CheckCircle,
       color: "text-success",
     },
     {
       title: "Overdue",
-      value: "$0",
+      value: formatCurrency(stats.overdue),
       icon: AlertCircle,
       color: "text-destructive",
     },
     {
       title: "Pending",
-      value: "$0",
+      value: formatCurrency(stats.pending),
       icon: Clock,
       color: "text-warning",
     },
   ];
+
+  if (isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="mx-auto max-w-7xl animate-fade-in">
+          <div className="mb-8 flex items-center justify-between">
+            <Skeleton className="h-10 w-48" />
+            <Skeleton className="h-10 w-32" />
+          </div>
+          <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="h-28" />
+            ))}
+          </div>
+          <Skeleton className="h-96" />
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
@@ -115,15 +150,11 @@ export default function Invoices() {
               Track and manage all client invoices
             </p>
           </div>
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            Create Invoice
-          </Button>
         </div>
 
         {/* Stats Grid */}
         <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {stats.map((stat) => (
+          {statCards.map((stat) => (
             <Card key={stat.title}>
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
@@ -171,54 +202,50 @@ export default function Invoices() {
                     <SelectItem value="paid">Paid</SelectItem>
                     <SelectItem value="pending">Pending</SelectItem>
                     <SelectItem value="overdue">Overdue</SelectItem>
-                    <SelectItem value="draft">Draft</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            {invoices.length === 0 ? (
+            {filteredInvoices.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <div className="rounded-full bg-secondary p-4">
                   <FileText className="h-8 w-8 text-muted-foreground" />
                 </div>
                 <h3 className="mt-4 text-lg font-semibold text-foreground">
-                  No invoices yet
+                  {invoices.length === 0 ? "No invoices yet" : "No matching invoices"}
                 </h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Create your first invoice to start tracking payments
+                  {invoices.length === 0
+                    ? "Invoices will appear here when you set up client billing"
+                    : "Try adjusting your search or filters"}
                 </p>
-                <Button className="mt-4">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Invoice
-                </Button>
               </div>
             ) : (
               <div className="rounded-lg border">
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
-                      <TableHead>Invoice #</TableHead>
+                      <TableHead>Invoice ID</TableHead>
                       <TableHead>Client</TableHead>
                       <TableHead>Amount</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Issue Date</TableHead>
-                      <TableHead>Due Date</TableHead>
+                      <TableHead>Date</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {invoices.map((invoice) => {
+                    {filteredInvoices.map((invoice) => {
                       const statusConfig = getStatusConfig(invoice.status);
                       return (
                         <TableRow key={invoice.id}>
-                          <TableCell className="font-medium">
-                            {invoice.invoiceNumber}
+                          <TableCell className="font-mono text-sm">
+                            {invoice.id.slice(0, 8)}...
                           </TableCell>
-                          <TableCell>{invoice.clientName}</TableCell>
+                          <TableCell>{invoice.client_name}</TableCell>
                           <TableCell className="font-semibold">
-                            {invoice.amount}
+                            {formatCurrency(invoice.amount)}
                           </TableCell>
                           <TableCell>
                             <Badge
@@ -233,20 +260,42 @@ export default function Invoices() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-muted-foreground">
-                            {invoice.issuedDate}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {invoice.dueDate}
+                            {format(new Date(invoice.created_at), "MMM d, yyyy")}
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <Download className="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <Send className="h-4 w-4" />
-                              </Button>
-                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    updateStatus({ id: invoice.id, status: "paid" })
+                                  }
+                                >
+                                  <CheckCircle className="mr-2 h-4 w-4 text-success" />
+                                  Mark as Paid
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    updateStatus({ id: invoice.id, status: "pending" })
+                                  }
+                                >
+                                  <Clock className="mr-2 h-4 w-4 text-warning" />
+                                  Mark as Pending
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    updateStatus({ id: invoice.id, status: "overdue" })
+                                  }
+                                >
+                                  <AlertCircle className="mr-2 h-4 w-4 text-destructive" />
+                                  Mark as Overdue
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </TableCell>
                         </TableRow>
                       );
