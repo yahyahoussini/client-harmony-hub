@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -9,6 +9,7 @@ import {
   Trash2,
   File,
   FileSpreadsheet,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ interface AssetManagementCardProps {
   onUpload?: (files: FileList) => void;
   onDownload?: (assetId: string) => void;
   onDelete?: (assetId: string) => void;
+  isUploading?: boolean;
 }
 
 const getFileIcon = (type: Asset["type"]) => {
@@ -45,8 +47,10 @@ export function AssetManagementCard({
   onUpload,
   onDownload,
   onDelete,
+  isUploading = false,
 }: AssetManagementCardProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -72,7 +76,12 @@ export function AssetManagementCard({
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       onUpload?.(e.target.files);
+      e.target.value = ""; // Reset to allow re-selecting same file
     }
+  };
+
+  const handleZoneClick = () => {
+    fileInputRef.current?.click();
   };
 
   return (
@@ -88,27 +97,34 @@ export function AssetManagementCard({
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
+          onClick={handleZoneClick}
           className={cn(
-            "relative rounded-lg border-2 border-dashed p-8 text-center transition-colors",
+            "relative rounded-lg border-2 border-dashed p-8 text-center transition-colors cursor-pointer",
             isDragging
               ? "border-primary bg-accent/50"
-              : "border-border hover:border-primary/50 hover:bg-secondary/30"
+              : "border-border hover:border-primary/50 hover:bg-secondary/30",
+            isUploading && "opacity-50 pointer-events-none"
           )}
         >
           <input
+            ref={fileInputRef}
             type="file"
             multiple
             accept=".pdf,.png,.jpg,.jpeg,.gif,.doc,.docx,.xls,.xlsx"
             onChange={handleFileSelect}
-            className="absolute inset-0 cursor-pointer opacity-0"
+            className="hidden"
           />
           <div className="flex flex-col items-center gap-2">
             <div className="rounded-full bg-secondary p-3">
-              <Upload className="h-6 w-6 text-muted-foreground" />
+              {isUploading ? (
+                <Loader2 className="h-6 w-6 text-primary animate-spin" />
+              ) : (
+                <Upload className="h-6 w-6 text-muted-foreground" />
+              )}
             </div>
             <div>
               <p className="text-sm font-medium text-foreground">
-                Drop files here or click to upload
+                {isUploading ? "Uploading..." : "Drop files here or click to upload"}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 PDF, Images, Documents up to 10MB

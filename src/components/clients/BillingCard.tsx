@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,7 @@ import { cn } from "@/lib/utils";
 
 interface BillingSettings {
   recurringEnabled: boolean;
-  amount: string;
+  amount: number;
   currency: string;
   cycle: string;
   nextPaymentDate: Date | undefined;
@@ -41,14 +41,20 @@ interface BillingSettings {
 interface Invoice {
   id: string;
   date: string;
-  amount: string;
+  amount: number;
   status: "paid" | "pending" | "overdue";
 }
 
 interface BillingCardProps {
   billing?: BillingSettings;
   invoices?: Invoice[];
-  onBillingUpdate?: (billing: BillingSettings) => void;
+  onBillingUpdate?: (billing: {
+    active?: boolean;
+    amount?: number;
+    currency?: string;
+    cycle?: string;
+    next_payment_date?: string;
+  }) => void;
   onViewInvoice?: (invoiceId: string) => void;
 }
 
@@ -72,20 +78,49 @@ export function BillingCard({
   const [billing, setBilling] = useState<BillingSettings>(
     initialBilling || {
       recurringEnabled: false,
-      amount: "",
+      amount: 0,
       currency: "USD",
       cycle: "monthly",
       nextPaymentDate: undefined,
     }
   );
 
-  const handleBillingChange = <K extends keyof BillingSettings>(
-    field: K,
-    value: BillingSettings[K]
-  ) => {
-    const updated = { ...billing, [field]: value };
-    setBilling(updated);
-    onBillingUpdate?.(updated);
+  // Sync with props when they change
+  useEffect(() => {
+    if (initialBilling) {
+      setBilling(initialBilling);
+    }
+  }, [initialBilling]);
+
+  const handleRecurringChange = (checked: boolean) => {
+    setBilling(prev => ({ ...prev, recurringEnabled: checked }));
+    onBillingUpdate?.({ active: checked });
+  };
+
+  const handleAmountChange = (value: string) => {
+    const amount = parseFloat(value) || 0;
+    setBilling(prev => ({ ...prev, amount }));
+  };
+
+  const handleAmountBlur = () => {
+    onBillingUpdate?.({ amount: billing.amount });
+  };
+
+  const handleCurrencyChange = (value: string) => {
+    setBilling(prev => ({ ...prev, currency: value }));
+    onBillingUpdate?.({ currency: value });
+  };
+
+  const handleCycleChange = (value: string) => {
+    setBilling(prev => ({ ...prev, cycle: value }));
+    onBillingUpdate?.({ cycle: value });
+  };
+
+  const handleDateChange = (date: Date | undefined) => {
+    setBilling(prev => ({ ...prev, nextPaymentDate: date }));
+    if (date) {
+      onBillingUpdate?.({ next_payment_date: date.toISOString() });
+    }
   };
 
   return (
@@ -113,9 +148,7 @@ export function BillingCard({
             <Switch
               id="recurring"
               checked={billing.recurringEnabled}
-              onCheckedChange={(checked) =>
-                handleBillingChange("recurringEnabled", checked)
-              }
+              onCheckedChange={handleRecurringChange}
             />
           </div>
 
@@ -130,7 +163,8 @@ export function BillingCard({
                   id="amount"
                   type="number"
                   value={billing.amount}
-                  onChange={(e) => handleBillingChange("amount", e.target.value)}
+                  onChange={(e) => handleAmountChange(e.target.value)}
+                  onBlur={handleAmountBlur}
                   placeholder="0.00"
                   className="pl-10"
                 />
@@ -143,7 +177,7 @@ export function BillingCard({
               </Label>
               <Select
                 value={billing.currency}
-                onValueChange={(value) => handleBillingChange("currency", value)}
+                onValueChange={handleCurrencyChange}
               >
                 <SelectTrigger id="currency">
                   <SelectValue placeholder="Select currency" />
@@ -164,7 +198,7 @@ export function BillingCard({
               </Label>
               <Select
                 value={billing.cycle}
-                onValueChange={(value) => handleBillingChange("cycle", value)}
+                onValueChange={handleCycleChange}
               >
                 <SelectTrigger id="cycle">
                   <SelectValue placeholder="Select cycle" />
@@ -201,9 +235,7 @@ export function BillingCard({
                   <Calendar
                     mode="single"
                     selected={billing.nextPaymentDate}
-                    onSelect={(date) =>
-                      handleBillingChange("nextPaymentDate", date)
-                    }
+                    onSelect={handleDateChange}
                     initialFocus
                     className="pointer-events-auto"
                   />
@@ -243,7 +275,7 @@ export function BillingCard({
                     <TableRow key={invoice.id}>
                       <TableCell className="text-sm">{invoice.date}</TableCell>
                       <TableCell className="text-sm font-medium">
-                        {invoice.amount}
+                        ${invoice.amount.toFixed(2)}
                       </TableCell>
                       <TableCell>
                         <Badge
