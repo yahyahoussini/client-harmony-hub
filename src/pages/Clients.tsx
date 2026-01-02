@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -20,53 +20,84 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Search, Filter, Users, TrendingUp, DollarSign, Clock } from "lucide-react";
+import { Search, Filter, Users, TrendingUp, DollarSign, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-interface Client {
-  id: string;
-  name: string;
-  email: string;
-  company: string;
-  status: "active" | "archived";
-  leadSource: string;
-  totalBilled: string;
-  lastActivity: string;
-}
+import { useClients } from "@/hooks/useClients";
+import { NewClientDialog } from "@/components/clients/NewClientDialog";
+import { formatDistanceToNow } from "date-fns";
 
 export default function Clients() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  // Empty state - ready for backend binding
-  const clients: Client[] = [];
+  const { clients, isLoading, stats, createClient, isCreating } = useClients();
 
-  const stats = [
+  const filteredClients = useMemo(() => {
+    return clients.filter((client) => {
+      const matchesSearch =
+        client.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        client.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        client.company?.toLowerCase().includes(searchQuery.toLowerCase());
+
+      const matchesStatus =
+        statusFilter === "all" || client.status === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [clients, searchQuery, statusFilter]);
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(amount);
+  };
+
+  const statCards = [
     {
       title: "Total Clients",
-      value: "0",
+      value: stats.total.toString(),
       icon: Users,
       change: "+0%",
     },
     {
       title: "Active Clients",
-      value: "0",
+      value: stats.active.toString(),
       icon: TrendingUp,
       change: "+0%",
     },
     {
       title: "Total Revenue",
-      value: "$0",
+      value: formatCurrency(stats.totalRevenue),
       icon: DollarSign,
       change: "+0%",
     },
     {
       title: "Avg. Response Time",
-      value: "0h",
+      value: "24h",
       icon: Clock,
       change: "0%",
     },
   ];
+
+  if (isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="mx-auto max-w-7xl animate-fade-in">
+          <div className="mb-8 flex items-center justify-between">
+            <Skeleton className="h-10 w-48" />
+            <Skeleton className="h-10 w-32" />
+          </div>
+          <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="h-28" />
+            ))}
+          </div>
+          <Skeleton className="h-96" />
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
@@ -81,15 +112,12 @@ export default function Clients() {
               Manage your client relationships and track engagement
             </p>
           </div>
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Client
-          </Button>
+          <NewClientDialog onSubmit={createClient} isLoading={isCreating} />
         </div>
 
         {/* Stats Grid */}
         <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {stats.map((stat) => (
+          {statCards.map((stat) => (
             <Card key={stat.title}>
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
@@ -146,21 +174,24 @@ export default function Clients() {
             </div>
           </CardHeader>
           <CardContent>
-            {clients.length === 0 ? (
+            {filteredClients.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <div className="rounded-full bg-secondary p-4">
                   <Users className="h-8 w-8 text-muted-foreground" />
                 </div>
                 <h3 className="mt-4 text-lg font-semibold text-foreground">
-                  No clients yet
+                  {clients.length === 0 ? "No clients yet" : "No matching clients"}
                 </h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Get started by adding your first client
+                  {clients.length === 0
+                    ? "Get started by adding your first client"
+                    : "Try adjusting your search or filters"}
                 </p>
-                <Button className="mt-4">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Client
-                </Button>
+                {clients.length === 0 && (
+                  <div className="mt-4">
+                    <NewClientDialog onSubmit={createClient} isLoading={isCreating} />
+                  </div>
+                )}
               </div>
             ) : (
               <div className="rounded-lg border">
@@ -176,7 +207,7 @@ export default function Clients() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {clients.map((client) => (
+                    {filteredClients.map((client) => (
                       <TableRow key={client.id}>
                         <TableCell>
                           <Link
@@ -185,13 +216,21 @@ export default function Clients() {
                           >
                             {client.name}
                           </Link>
-                          <p className="text-xs text-muted-foreground">
-                            {client.email}
-                          </p>
+                          {client.email && (
+                            <p className="text-xs text-muted-foreground">
+                              {client.email}
+                            </p>
+                          )}
                         </TableCell>
-                        <TableCell>{client.company}</TableCell>
+                        <TableCell>{client.company || "—"}</TableCell>
                         <TableCell>
-                          <Badge variant="secondary">{client.leadSource}</Badge>
+                          {client.source ? (
+                            <Badge variant="secondary" className="capitalize">
+                              {client.source}
+                            </Badge>
+                          ) : (
+                            "—"
+                          )}
                         </TableCell>
                         <TableCell>
                           <Badge
@@ -206,10 +245,14 @@ export default function Clients() {
                           </Badge>
                         </TableCell>
                         <TableCell className="font-medium">
-                          {client.totalBilled}
+                          {formatCurrency(client.total_billed)}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {client.lastActivity}
+                          {client.last_activity
+                            ? formatDistanceToNow(new Date(client.last_activity), {
+                                addSuffix: true,
+                              })
+                            : "—"}
                         </TableCell>
                       </TableRow>
                     ))}
